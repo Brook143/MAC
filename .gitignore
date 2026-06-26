@@ -1,0 +1,41 @@
+# 环境变量（包含密钥）
+.env
+
+# 微信登录凭证
+weixin_tokens.json
+
+# 日志
+webot.log
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+data/
+.dockerignore/
+Dockerfile
+
+# 本地工作文件（不提交）
+.codebuddy/
+.workbuddy/
+
+## 测试文件
+test.py

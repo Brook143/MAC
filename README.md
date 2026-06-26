@@ -1,24 +1,100 @@
-# 多用户微信机器人
+# MAC 股票助手
 
-支持多账号同时在线，每个账号独立线程监听消息。
+基于微信机器人的智能股票分析多智能体系统，支持自然语言对话查询个股行情、筛选特殊股票，内置多轮对话记忆与风险提示。
+
+---
+
+## 功能特性
+
+- **多账号管理**：支持同时登录多个微信账号，每个账号独立线程监听消息
+- **智能路由**：基于 LLM 的意图识别，准确判断用户是想查个股、筛选股票还是闲聊
+- **多轮对话**：维护会话历史，支持"继续""那它呢"等指代词消歧
+- **个股分析**：调用 Tushare 获取近十日行情，结合 LLM 做客观分析
+- **股票筛选**：基于 Redis 缓存数据，按连涨天数、涨跌幅、特殊数字规则筛选值得关注的股票
+- **风险提示**：非聊天类回复自动追加风险提示，合规友好
+
+---
+
+## 项目架构
+
+```
+MAC/
+├── webot.py              # 主程序：微信 iLink Bot 协议、多账号线程、定时任务
+├── agent.py              # 编排入口：路由分发、会话历史管理、风险提示
+├── agents/
+│   ├── router.py        # 意图路由智能体（快速路径 + LLM 路由 + 规则兜底）
+│   ├── chat_agent.py    # 闲聊智能体
+│   ├── scanner_agent.py  # 股票筛选智能体（调用 find_special_stocks 工具）
+│   ├── stock_agent.py   # 个股分析智能体（调用 fetch_stock_data 工具）
+│   ├── llm.py          # LLM 工厂：根据 agent 名构造 ChatOpenAI 实例
+│   └── tool_runner.py  # 通用工具调用循环（最多 5 轮）
+├── tools/
+│   ├── find_data.py     # 特殊股票筛选工具（连涨>2 且涨幅 2~7% 且最低价小数部分两位相同）
+│   └── fetch_data.py   # 个股行情拉取工具（Tushare pro.daily）
+├── getall.py            # 定时任务：分页拉取全市场日线，筛选主板，计算连涨天数，批量写 Redis
+├── rediscache.py       # Redis 客户端封装（带降级模式）
+├── requirements.txt     # Python 依赖
+├── .env.example        # 环境变量示例
+└── .gitignore         # Git 忽略规则
+```
 
 ---
 
 ## 快速开始
 
-### 1. 启动程序
+### 1. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+或使用项目自带虚拟环境：
+
+```bash
+.\env\Scripts\activate
+```
+
+### 2. 启动 Redis
+
+**Windows 本地安装方式**：
+
+下载 Redis for Windows 移植版：https://github.com/tporadowski/redis/releases
+
+解压后编辑 `redis.windows.conf`，设置密码：
+```
+requirepass xuyuze
+```
+
+启动 Redis：
+```bash
+redis-server.exe redis.windows.conf
+```
+
+验证：
+```bash
+redis-cli.exe -a xuyuze ping
+# 返回 PONG 即成功
+```
+
+### 3. 配置并启动程序
+
+复制 `.env.example` 为 `.env`，填写必要配置后启动：
 
 ```bash
 python webot.py
 ```
 
-### 2. 登录账号
+---
 
-输入命令 `a` → 终端显示二维码 → **微信扫码** → 手机确认 → 输入标识名（如 `小号1`）
+## 使用说明
+
+### 登录账号
+
+启动后输入命令 `a` → 终端显示二维码 → **微信扫码** → 手机确认 → 输入标识名（如 `小号1`）
 
 重复以上步骤可登录多个账号。
 
-### 3. 常用命令
+### 常用命令
 
 | 命令 | 作用 |
 |------|------|
@@ -27,68 +103,28 @@ python webot.py
 | `d` | 删除账号（停止监听并移除） |
 | `q` | 退出程序 |
 
-### 4. 查看日志
+### 对话示例
 
-```bash
-tail -f webot.log
 ```
+用户：000001.SZ 怎么样
+助手：近十日收盘价...（个股分析）
 
----
+用户：那它呢
+助手：近十日收盘价...（结合上下文，继续分析 000001.SZ）
 
-## Docker 部署
+用户：最近有什么特殊股票
+助手：筛选结果...（调用 find_special_stocks 工具）
 
-### 构建镜像
-
-```bash
-docker build -t webot .
+用户：继续
+助手：...（结合筛选结果继续推荐）
 ```
-
-### 运行容器
-
-```bash
-docker run -d \
-  --name webot \
-  -v $(pwd)/weixin_tokens.json:/app/weixin_tokens.json \
-  -v $(pwd)/webot.log:/app/webot.log \
-  webot
-```
-
-### 进入容器交互（扫码登录用）
-
-```bash
-docker exec -it webot python webot.py
-```
-
-输入 `a` 扫码登录，登录成功后按 `q` 退出交互，后台线程继续运行。
-
-### 查看日志
-
-```bash
-docker logs -f webot
-```
-
-### 停止/重启
-
-```bash
-docker stop webot
-docker start webot
-```
-
----
-
-## 文件说明
-
-| 文件 | 说明 |
-|------|------|
-| `webot.py` | 主程序 |
-| `weixin_tokens.json` | 账号 token 缓存（登录后自动生成） |
-| `webot.log` | 运行日志 |
 
 ---
 
 ## 注意事项
 
-1. **首次登录**：必须在交互模式下扫码（`docker exec -it`），登录成功后 token 会保存到 `weixin_tokens.json`
-2. **token 过期**：输入 `d` 删除旧账号，重新 `a` 扫码登录
-3. **多账号建议**：3 个以内，每个账号一个线程
-4. **敏感文件**：`weixin_tokens.json` 不要上传到公开仓库
+1. **Token 过期**：输入 `d` 删除旧账号，重新 `a` 扫码登录
+2. **多账号建议**：3 个以内，每个账号一个线程
+3. **敏感文件**：`.env`、`weixin_tokens.json` 已加入 `.gitignore`，请勿上传到公开仓库
+4. **Redis 必需**：项目依赖 Redis 缓存股票数据，未安装 Redis 会降级但功能受限
+5. **Tushare Token**：需自行申请 Tushare Token（https://tushare.pro/register）
